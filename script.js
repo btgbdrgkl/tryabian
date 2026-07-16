@@ -1,15 +1,4 @@
-let mode = 'ru'; // 'ru' или 'try'
-
-// Грамматические правила
-const grammar = {
-    tenses: {
-        'наст.вр.': { prefix: '', desc: 'настоящее время' },
-        'прош.вр.': { prefix: 'жо', desc: 'прошедшее время (жо-)' },
-        'буд.вр.': { prefix: 'хё', desc: 'будущее время (хё-)' }
-    },
-    plural: { prefix: 'тё', desc: 'множественное число (тё-)' },
-    possessive: { prefix: 'я', desc: 'притяжательность (я-)' }
-};
+let mode = 'try'; // Начинаем с Tryabian → Русский
 
 function switchMode(m) {
     mode = m;
@@ -34,22 +23,49 @@ function renderAlphabet() {
     ).join('');
 }
 
-// Создаём индексы для быстрого поиска
+// Строим индексы
 const ruIndex = {};
 const tryIndex = {};
 
 dictionary.forEach(w => {
     // Индекс русский → tryabian
-    const ruWords = w[4].toLowerCase().split(/[,;\s]+/);
+    const ruWords = w[4].toLowerCase().replace(/[()]/g, '').split(/[,;\s]+/);
     ruWords.forEach(rw => {
         if (!ruIndex[rw]) ruIndex[rw] = [];
-        ruIndex[rw].push(w);
+        if (!ruIndex[rw].includes(w)) ruIndex[rw].push(w);
     });
     
     // Индекс tryabian → русский (латиница и кириллица)
     if (!tryIndex[w[0].toLowerCase()]) tryIndex[w[0].toLowerCase()] = w;
     if (!tryIndex[w[1].toLowerCase()]) tryIndex[w[1].toLowerCase()] = w;
 });
+
+// Префиксы для распознавания грамматики (латиница + кириллица)
+const prefixes = [
+    { latin: 'hyo', cyr: 'хё', meaning: 'буд.вр.', desc: 'будущее время' },
+    { latin: 'zho', cyr: 'жо', meaning: 'прош.вр.', desc: 'прошедшее время' },
+    { latin: 'tyo', cyr: 'тё', meaning: 'мн.ч.', desc: 'множественное число' },
+    { latin: 'ya',  cyr: 'я',  meaning: 'притяж.', desc: 'притяжательность' }
+];
+
+function findTryWord(word) {
+    // Точное совпадение
+    if (tryIndex[word]) return { entry: tryIndex[word], grammar: null };
+    
+    // Пробуем отрезать префиксы
+    for (const p of prefixes) {
+        if (word.startsWith(p.latin) && word.length > p.latin.length) {
+            const stem = word.substring(p.latin.length);
+            if (tryIndex[stem]) return { entry: tryIndex[stem], grammar: p };
+        }
+        if (word.startsWith(p.cyr) && word.length > p.cyr.length) {
+            const stem = word.substring(p.cyr.length);
+            if (tryIndex[stem]) return { entry: tryIndex[stem], grammar: p };
+        }
+    }
+    
+    return null;
+}
 
 function search() {
     const query = document.getElementById('search').value.trim();
@@ -64,18 +80,17 @@ function search() {
         return; 
     }
     
-    // Проверяем, предложение ли это (несколько слов)
     const words = query.split(/\s+/);
     
     if (words.length > 1) {
-        // Переводим предложение
+        // ПЕРЕВОД ПРЕДЛОЖЕНИЯ
         resultDiv.style.display = 'none';
         sentenceDiv.style.display = 'block';
         
         let translated = [];
         let breakdown = [];
         
-        words.forEach((word, i) => {
+        words.forEach((word) => {
             const cleanWord = word.toLowerCase().replace(/[.,!?]/g, '');
             const punct = word.match(/[.,!?]/) ? word.match(/[.,!?]/)[0] : '';
             
@@ -85,61 +100,41 @@ function search() {
                 if (entry) {
                     const w = entry[0];
                     translated.push(w[0] + punct);
-                    breakdown.push(`${word} → ${w[0]} (${w[1]}) [${w[3]}]`);
+                    breakdown.push(`<span style="color:#e94560;">${word}</span> → <b>${w[0]}</b> (${w[1]}) — ${w[4]}`);
                 } else {
                     translated.push(`[${word}]`);
-                    breakdown.push(`${word} → ❌ не найдено`);
+                    breakdown.push(`<span style="color:#e94560;">${word}</span> → ❌ не найдено`);
                 }
             } else {
                 // Tryabian → Русский
-                const entry = tryIndex[cleanWord];
-                if (entry) {
-                    translated.push(entry[4].split(',')[0] + punct);
-                    breakdown.push(`${word} → ${entry[4]} [${entry[3]}]`);
+                const result = findTryWord(cleanWord);
+                if (result) {
+                    const w = result.entry;
+                    const g = result.grammar;
+                    const grammarNote = g ? ` <span style="color:#e94560;">[${g.meaning}]</span>` : '';
+                    const displayWord = g ? w[4].split(',')[0] + ' ' + g.desc : w[4].split(',')[0];
+                    translated.push(displayWord + punct);
+                    breakdown.push(`<span style="color:#e94560;">${word}</span> → <b>${w[4]}</b>${grammarNote} (основа: ${w[0]})`);
                 } else {
-                    // Пробуем распознать грамматические префиксы
-                    let stem = cleanWord;
-                    let grammarNote = '';
-                    
-                    if (stem.startsWith('хё')) {
-                        stem = stem.substring(2);
-                        grammarNote = ' (буд.вр.)';
-                    } else if (stem.startsWith('жо')) {
-                        stem = stem.substring(2);
-                        grammarNote = ' (прош.вр.)';
-                    } else if (stem.startsWith('тё')) {
-                        stem = stem.substring(2);
-                        grammarNote = ' (мн.ч.)';
-                    } else if (stem.startsWith('я')) {
-                        stem = stem.substring(1);
-                        grammarNote = ' (притяж.)';
-                    }
-                    
-                    const stemEntry = tryIndex[stem];
-                    if (stemEntry) {
-                        translated.push(stemEntry[4].split(',')[0] + grammarNote + punct);
-                        breakdown.push(`${word} → ${stemEntry[4]}${grammarNote} [основа: ${stem}]`);
-                    } else {
-                        translated.push(`[${word}]`);
-                        breakdown.push(`${word} → ❌ не найдено`);
-                    }
+                    translated.push(`[${word}]`);
+                    breakdown.push(`<span style="color:#e94560;">${word}</span> → ❌ не найдено`);
                 }
             }
         });
         
         sentenceContent.innerHTML = `
-            <div style="background:#0f3460;padding:20px;border-radius:8px;margin-bottom:15px;">
-                <div style="font-size:14px;color:#aaa;margin-bottom:5px;">ПЕРЕВОД:</div>
-                <div style="font-size:22px;color:#fff;">${translated.join(' ')}</div>
+            <div style="background:#0f3460;padding:20px;border-radius:12px;margin-bottom:15px;">
+                <div style="font-size:13px;color:#888;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Перевод</div>
+                <div style="font-size:24px;color:#fff;line-height:1.5;">${translated.join(' ')}</div>
             </div>
-            <div style="background:#16213e;padding:20px;border-radius:8px;">
-                <div style="font-size:14px;color:#aaa;margin-bottom:10px;">РАЗБОР:</div>
-                ${breakdown.map(b => `<div style="font-size:16px;color:#ccc;margin:5px 0;">${b}</div>`).join('')}
+            <div style="background:#16213e;padding:20px;border-radius:12px;">
+                <div style="font-size:13px;color:#888;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px;">Разбор</div>
+                ${breakdown.map(b => `<div style="font-size:15px;color:#ccc;margin:8px 0;padding:6px 0;border-bottom:1px solid #222;">${b}</div>`).join('')}
             </div>
         `;
         
     } else {
-        // Переводим одно слово (старая логика)
+        // ПОИСК ОДНОГО СЛОВА
         sentenceDiv.style.display = 'none';
         
         let matches = [];
@@ -169,11 +164,11 @@ function search() {
         }
         
         content.innerHTML = matches.slice(0, 20).map(w => `
-            <div class="word-title">${w[0]} <span style="font-size:16px;color:#ccc;">(${w[1]})</span></div>
+            <div class="word-title">${w[0]} <span style="font-size:16px;color:#aaa;">(${w[1]})</span></div>
             <div class="word-pron">${w[2]}</div>
             <div class="word-pos">${w[3]}</div>
             <div class="word-def">→ ${w[4]}</div>
-            <hr style="border-color:#333;margin:15px 0;">
+            <hr style="border-color:#222;margin:15px 0;">
         `).join('');
         resultDiv.style.display = 'block';
     }
@@ -181,3 +176,4 @@ function search() {
 
 // Инициализация
 renderAlphabet();
+switchMode('try');
