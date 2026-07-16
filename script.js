@@ -1,4 +1,4 @@
-let mode = 'try'; // Начинаем с Tryabian → Русский
+let mode = 'try';
 
 function switchMode(m) {
     mode = m;
@@ -23,24 +23,26 @@ function renderAlphabet() {
     ).join('');
 }
 
-// Строим индексы
+// Индексы
 const ruIndex = {};
 const tryIndex = {};
 
 dictionary.forEach(w => {
-    // Индекс русский → tryabian
-    const ruWords = w[4].toLowerCase().replace(/[()]/g, '').split(/[,;\s]+/);
-    ruWords.forEach(rw => {
-        if (!ruIndex[rw]) ruIndex[rw] = [];
-        if (!ruIndex[rw].includes(w)) ruIndex[rw].push(w);
-    });
-    
-    // Индекс tryabian → русский (латиница и кириллица)
+    // Индекс tryabian → русский
     if (!tryIndex[w[0].toLowerCase()]) tryIndex[w[0].toLowerCase()] = w;
     if (!tryIndex[w[1].toLowerCase()]) tryIndex[w[1].toLowerCase()] = w;
+    
+    // Индекс русский → tryabian (каждое слово перевода — отдельный ключ)
+    const ruMeanings = w[4].toLowerCase().replace(/[()]/g, '').split(/[,;\s]+/);
+    ruMeanings.forEach(meaning => {
+        if (meaning && meaning.length > 0) {
+            if (!ruIndex[meaning]) ruIndex[meaning] = [];
+            if (!ruIndex[meaning].includes(w)) ruIndex[meaning].push(w);
+        }
+    });
 });
 
-// Префиксы для распознавания грамматики (латиница + кириллица)
+// Префиксы
 const prefixes = [
     { latin: 'hyo', cyr: 'хё', meaning: 'буд.вр.', desc: 'будущее время' },
     { latin: 'zho', cyr: 'жо', meaning: 'прош.вр.', desc: 'прошедшее время' },
@@ -49,10 +51,8 @@ const prefixes = [
 ];
 
 function findTryWord(word) {
-    // Точное совпадение
     if (tryIndex[word]) return { entry: tryIndex[word], grammar: null };
     
-    // Пробуем отрезать префиксы
     for (const p of prefixes) {
         if (word.startsWith(p.latin) && word.length > p.latin.length) {
             const stem = word.substring(p.latin.length);
@@ -65,6 +65,23 @@ function findTryWord(word) {
     }
     
     return null;
+}
+
+function findRuWord(word) {
+    // Точное совпадение
+    if (ruIndex[word]) return ruIndex[word];
+    
+    // Поиск по части слова
+    let results = [];
+    Object.keys(ruIndex).forEach(key => {
+        if (key.includes(word)) {
+            ruIndex[key].forEach(w => {
+                if (!results.includes(w)) results.push(w);
+            });
+        }
+    });
+    
+    return results.length > 0 ? results : null;
 }
 
 function search() {
@@ -95,10 +112,9 @@ function search() {
             const punct = word.match(/[.,!?]/) ? word.match(/[.,!?]/)[0] : '';
             
             if (mode === 'ru') {
-                // Русский → Tryabian
-                const entry = ruIndex[cleanWord];
-                if (entry) {
-                    const w = entry[0];
+                const entries = findRuWord(cleanWord);
+                if (entries && entries.length > 0) {
+                    const w = entries[0];
                     translated.push(w[0] + punct);
                     breakdown.push(`<span style="color:#e94560;">${word}</span> → <b>${w[0]}</b> (${w[1]}) — ${w[4]}`);
                 } else {
@@ -106,7 +122,6 @@ function search() {
                     breakdown.push(`<span style="color:#e94560;">${word}</span> → ❌ не найдено`);
                 }
             } else {
-                // Tryabian → Русский
                 const result = findTryWord(cleanWord);
                 if (result) {
                     const w = result.entry;
@@ -134,7 +149,7 @@ function search() {
         `;
         
     } else {
-        // ПОИСК ОДНОГО СЛОВА
+        // ОДНО СЛОВО
         sentenceDiv.style.display = 'none';
         
         let matches = [];
@@ -174,6 +189,6 @@ function search() {
     }
 }
 
-// Инициализация
+// Старт
 renderAlphabet();
 switchMode('try');
